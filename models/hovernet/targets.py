@@ -99,9 +99,9 @@ def gen_instance_hv_map(ann, crop_shape):
 ####
 def gen_targets(ann, crop_shape, **kwargs):
     """Generate the targets for the network."""
-    hv_map = gen_instance_hv_map(ann, crop_shape)
+    hv_map = gen_instance_hv_map(ann, crop_shape)       # Horizonal-Veritcal map
     np_map = ann.copy()
-    np_map[np_map > 0] = 1
+    np_map[np_map > 0] = 1                              # Instance to binary mask (0/1)
 
     hv_map = cropping_center(hv_map, crop_shape)
     np_map = cropping_center(np_map, crop_shape)

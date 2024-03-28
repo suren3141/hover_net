@@ -5,8 +5,14 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .utils import cropping_center
+try:
+    from .utils import cropping_center
+except ImportError as e:
+    from utils import cropping_center
 
+import os
+
+from torch.utils.tensorboard import SummaryWriter
 
 #####
 class PatchExtractor(object):
@@ -48,10 +54,20 @@ class PatchExtractor(object):
                 cen = cen[..., self.counter % 3]
                 cen.fill(150)
             cv2.rectangle(x, ptx, pty, (255, 0, 0), 2)
-            plt.imshow(x)
-            plt.show(block=False)
-            plt.pause(1)
-            plt.close()
+
+            if "DISPLAY" in os.environ:
+                plt.imshow(x)
+                plt.show(block=False)
+                plt.pause(1)
+                plt.close()
+            else:
+                # fig = plt.figure()
+                # plt.imshow(x)
+
+                writer = SummaryWriter('log_dir')
+                writer.add_image('image', x, 0, dataformats='HWC')
+                writer.close()
+
             self.counter += 1
         return win
 

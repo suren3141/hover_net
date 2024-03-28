@@ -2,6 +2,8 @@ import glob
 import cv2
 import numpy as np
 import scipy.io as sio
+from PIL import Image
+import blobfile as bf
 
 
 class __AbstractDataset(object):
@@ -61,6 +63,31 @@ class __CPM17(__AbstractDataset):
         ann = np.expand_dims(ann_inst, -1)
         return ann
 
+####
+class __MoNuSeg(__AbstractDataset):
+    """
+    """
+
+    def load_img(self, path):
+
+        with bf.BlobFile(path, "rb") as f:
+            pil_image = Image.open(f)
+            pil_image.load()
+        pil_image = pil_image.convert("RGB")
+
+        return np.array(pil_image)
+
+    def load_ann(self, path, with_type=False):
+        assert not with_type, "Not support"
+        # assumes that ann is HxW
+        with bf.BlobFile(path, "rb") as f:
+            pil_class = Image.open(f)
+            pil_class.load()
+        pil_class = pil_class.convert("L")
+        ann_inst = np.array(pil_class)
+        ann = np.expand_dims(ann_inst, -1)
+        return ann
+
 
 ####
 class __CoNSeP(__AbstractDataset):
@@ -102,6 +129,7 @@ def get_dataset(name):
         "kumar": lambda: __Kumar(),
         "cpm17": lambda: __CPM17(),
         "consep": lambda: __CoNSeP(),
+        "monuseg": lambda: __MoNuSeg(),
     }
     if name.lower() in name_dict:
         return name_dict[name]()

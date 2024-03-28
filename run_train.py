@@ -29,12 +29,14 @@ import matplotlib
 import numpy as np
 import torch
 from docopt import docopt
+
 from tensorboardX import SummaryWriter
 from torch.nn import DataParallel  # TODO: switch to DistributedDataParallel
 from torch.utils.data import DataLoader
 
-from config import Config
+from config_monuseg import Config
 from dataloader.train_loader import FileLoader
+from dataloader.utils import get_file_list
 from misc.utils import rm_n_mkdir
 from run_utils.engine import RunEngine
 from run_utils.utils import (
@@ -92,28 +94,26 @@ class TrainManager(Config):
             plt.show()
         self.nr_gpus = -1
         return
-
+    
     ####
     def _get_datagen(self, batch_size, run_mode, target_gen, nr_procs=0, fold_idx=0):
         nr_procs = nr_procs if not self.debug else 0
 
-        # ! Hard assumption on file type
-        file_list = []
         if run_mode == "train":
             data_dir_list = self.train_dir_list
         else:
             data_dir_list = self.valid_dir_list
-        for dir_path in data_dir_list:
-            file_list.extend(glob.glob("%s/*.npy" % dir_path))
-        file_list.sort()  # to always ensure same input ordering
+
+        file_list = get_file_list(data_dir_list, self.file_type)
 
         assert len(file_list) > 0, (
-            "No .npy found for `%s`, please check `%s` in `config.py`"
-            % (run_mode, "%s_dir_list" % run_mode)
+            "No %s found for `%s`, please check `%s` in `config.py`"
+            % (self.file_type, run_mode, "%s_dir_list" % run_mode)
         )
         print("Dataset %s: %d" % (run_mode, len(file_list)))
         input_dataset = FileLoader(
             file_list,
+            file_type=self.file_type,
             mode=run_mode,
             with_type=self.type_classification,
             setup_augmentor=nr_procs == 0,
