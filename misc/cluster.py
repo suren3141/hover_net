@@ -30,6 +30,11 @@ def json_to_symlink(
             dst = os.path.join(out_path, f"{label}", par_dir, "images", file_name)
             if not os.path.exists(dst):
                 os.symlink(src, dst)
+            elif remove_existing:
+                os.unlink(dst)
+                os.symlink(src, dst)
+            else:
+                raise ValueError(f"path {dst} already exists")
             # print(dst)
 
 
@@ -87,3 +92,17 @@ def symlink_to_json(
 
     return out_dic
 
+
+
+if __name__ == "__main__":
+    out_path = "/mnt/dataset/MoNuSeg/patches_256x256_128x128/names_37_14"
+
+    js_name = "/mnt/dataset/MoNuSeg/patches_256x256_128x128/names_37_14/train.json"
+    par_dir = "MoNuSegTrainingData"
+
+    json_to_symlink(js_name, out_path, par_dir, remove_existing=True)
+
+    js_name = "/mnt/dataset/MoNuSeg/patches_256x256_128x128/names_37_14/valid.json"
+    par_dir = "MoNuSegTestData"
+
+    json_to_symlink(js_name, out_path, par_dir, remove_existing=True)    
