@@ -49,20 +49,20 @@ class Config(object):
 
         # paths to training and validation patches
         self.train_dir_list = [
-            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/MoNuSegTrainingData/"
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/0/MoNuSegTrainingData/",
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/1/MoNuSegTrainingData/",
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/2/MoNuSegTrainingData/",
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/3/MoNuSegTrainingData/",
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/4/MoNuSegTrainingData/"
+            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/MoNuSegTrainingData/"
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/0/MoNuSegTrainingData/",
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/1/MoNuSegTrainingData/",
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/2/MoNuSegTrainingData/",
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/3/MoNuSegTrainingData/",
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/4/MoNuSegTrainingData/"
         ]
         self.valid_dir_list = [
-            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/MoNuSegTestData/"
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/1/MoNuSegTestData/",
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/2/MoNuSegTestData/",
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/3/MoNuSegTestData/",
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/4/MoNuSegTestData/",
-            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/0/MoNuSegTestData/",
+            "/mnt/dataset/MoNuSeg/patches_256x256_128x128/MoNuSegTestData/"
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/1/MoNuSegTestData/",
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/2/MoNuSegTestData/",
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/3/MoNuSegTestData/",
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/4/MoNuSegTestData/",
+            # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/0/MoNuSegTestData/",
         ]
 
         # extension of training and validation patches
