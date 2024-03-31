@@ -24,13 +24,18 @@ from run_train import TrainManager
 from tensorboard.plugins import projector
 from tqdm import tqdm
 
+from typing import Union
+
+IMG_WIDTH, IMG_HEIGHT = (64, 64)
+
 def get_class(path):
     match = re.findall('gmm_\d/\d', path)
-    if match is not None:
+    if match is not None and len(match) > 0 :
         cls = os.path.split(match[0])[-1]
-        return cls
+    else:
+        cls = os.path.splitext(os.path.split(path)[-1])[0][:-4]
     
-    return None
+    return cls
 
 def resize_images(img):
     return [to_pil_image(i.permute(2, 0, 1)).resize((IMG_WIDTH, IMG_HEIGHT)) for i in img]
@@ -47,12 +52,21 @@ def get_images_labels_features(dataloader, model, preprocess):
         # Step 3: Apply inference preprocessing transforms
         img = batch['img']
         path = batch['path']
+
+        if isinstance(path, (tuple, list)):
+            img_path = path[0]
+        elif isinstance(path, str):
+            img_path = path
+        else:
+            raise ValueError(type(path))
+
         assert img.ndim == 4, "Missing batches of RGB"
 
         feature = extract_features(img.permute(0, 3, 1, 2), model, preprocess)
 
+        # print(feature.shape)
         # img = load_and_resize_image(img_path, IMG_WIDTH, IMG_HEIGHT)
-        cls = [get_class(p) for p in path]
+        cls = [get_class(p) for p in img_path]
 
         images.extend(resize_images(img))
         labels.extend(cls)
@@ -140,7 +154,6 @@ def write_embedding(log_dir, pil_images, features, labels):
 
 if __name__ == "__main__":
 
-    IMG_WIDTH, IMG_HEIGHT = (64, 64)
     MODEL_NAME = "ResNet50"
     run_mode = "train"
 

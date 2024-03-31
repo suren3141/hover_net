@@ -266,7 +266,7 @@ class MoNuSegDataset(torch.utils.data.Dataset):
             ann = self.load_ann(ann_path)
             # img = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB) # RGB images
             # ann = np.expand_dims(cv2.imread(ann_path, 0), -1).astype("int32")  # instance ID map and type map
-            feed_dict['path'] = img_path
+            feed_dict['path'] = path
 
         else:
             raise NotImplementedError
