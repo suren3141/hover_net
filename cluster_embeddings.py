@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 import sys, os
+import pandas as pd
 
 # currentdir = os.path.abspath(os.getcwd())
 # parentdir = os.path.dirname(currentdir)
@@ -12,6 +13,7 @@ from config_monuseg import Config
 
 # from torchvision.io import read_image
 from torchvision.models import resnet50, ResNet50_Weights, resnet18, ResNet18_Weights
+from torchvision.models import resnet101, ResNet101_Weights
 from torch import nn
 
 # from torch.nn import DataParallel  # TODO: switch to DistributedDataParallel
@@ -51,7 +53,10 @@ def plot_clusters(X, labels, cmap=True, ax=None):
 
 def get_emb_model(model_name):
     
-    if model_name == "ResNet50":
+    if model_name == "ResNet101":
+        weights = ResNet101_Weights.DEFAULT
+        model = resnet101(weights=weights)
+    elif model_name == "ResNet50":
         weights = ResNet50_Weights.DEFAULT
         model = resnet50(weights=weights)
     elif model_name == "ResNet18":
@@ -81,21 +86,22 @@ def get_cluster_model(cluster_model, n_clusters, **kwargs):
 
 def save_cluster_model(model, out_name):
 
-    assert Path(out_name).stem == "joblib", "save models with extension joblib"
+    assert os.path.splitext(out_name)[-1] == ".joblib", "save models with extension joblib"
 
     joblib.dump(model, out_name)
 
-def exp_cluster(cluster_model_name, n_clusters, scaled_train_features, scaled_val_features):
+
+def exp_cluster(cluster_model_name, n_clusters, scaled_train_features, scaled_val_features, iterations=10):
 
     bst_sil=[]
     models = []
     mx_size = []
     mn_size = []
 
-    for it in tqdm(range(10)):
+    for it in tqdm(range(iterations)):
         cluster_model = get_cluster_model(cluster_model_name, n_clusters, n_init=3).fit(scaled_train_features) 
         labels = cluster_model.predict(scaled_val_features)
-        unique, counts = np.unique(labels, return_counts=True)
+        unique, counts = np.unique(cluster_model.predict(scaled_train_features), return_counts=True)
         try:
             sil=metrics.silhouette_score(scaled_val_features, labels, metric='euclidean')
             bst_sil.append(sil)
@@ -107,11 +113,18 @@ def exp_cluster(cluster_model_name, n_clusters, scaled_train_features, scaled_va
             print(e)
 
     ind = np.argsort(bst_sil)[::-1]
-    print(bst_sil[ind])
-    print(mx_size[ind])
-    print(mn_size[ind])
+    out = {
+        "model" : models[ind[0]],
+        "sil" : np.array(bst_sil)[ind].tolist(),
+        "mx_size" : np.array(mx_size)[ind].tolist(),
+        "mn_size" : np.array(mn_size)[ind].tolist(),
+    }
 
-    return models[ind[0]]
+    print(out['sil'])
+    print(out['mx_size'])
+    print(out['mn_size'])
+
+    return out
 
 import json
 
@@ -121,12 +134,21 @@ def cluster_to_json(file_names, labels, out_path, json_name):
     img_dic = {}
     mask_dic = {}
 
-    for file_name, label in zip(file_names, labels):
-        img_path, ann_path = file_name[0], file_name[1]
-        # label = get_class(img_path)
+    if len(file_names) == 2:
+        img_paths, ann_paths = file_names
+        for img_path, ann_path, label in zip(img_paths, ann_paths, labels):
 
-        img_dic[img_path] = label
-        mask_dic[ann_path] = label
+            img_dic[img_path] = str(label)
+            mask_dic[ann_path] = str(label)
+
+
+    else:
+        for file_name, label in zip(file_names, labels):
+            img_path, ann_path = file_name
+            # label = get_class(img_path)
+
+            img_dic[img_path] = str(label)
+            mask_dic[ann_path] = str(label)
 
     out_file = os.path.join(out_path, json_name)
     with open(out_file, "w+") as f:
@@ -135,13 +157,14 @@ def cluster_to_json(file_names, labels, out_path, json_name):
 
 
 if __name__ == "__main__":
-    EMB_MODEL_NAME = "ResNet50"
-    CLUSTER_MODEL_NAME = "gmm"
-    N_CLUSTERS = 5
+    EMB_MODEL_NAME = "ResNet18"
+    CLUSTER_MODEL_NAME = "kmeans"
+    N_CLUSTERS = 10
+    exp_name = "v1.1"
 
     LOG_DIR = os.path.join('./logs_clustered', EMB_MODEL_NAME)
 
-    out_path = f"/mnt/dataset/MoNuSeg/patches_256x256_128x128/{CLUSTER_MODEL_NAME}_{N_CLUSTERS}"
+    out_path = f"/mnt/dataset/MoNuSeg/patches_256x256_128x128/{EMB_MODEL_NAME}_{CLUSTER_MODEL_NAME}_{N_CLUSTERS}_{exp_name}"
 
 
     config = Config()
@@ -166,26 +189,60 @@ if __name__ == "__main__":
 
     model_emb, preprocess = get_emb_model(EMB_MODEL_NAME)
 
-    train_images, train_labels, train_features, train_file_names = get_images_labels_features(train_dataloader, model_emb, preprocess)
-    val_images, val_labels, val_features, val_file_names = get_images_labels_features(val_dataloader, model_emb, preprocess)
+    ## Feature extraction
+    if LOG_DIR is not None and os.path.exists(Path(LOG_DIR)/'train'):
+        train_labels = pd.read_csv(Path(LOG_DIR)/'train'/'metadata.tsv' ,sep='\t', header=None)[0].to_list()
+        train_features = pd.read_csv(Path(LOG_DIR)/'train'/'features.tsv' ,sep='\t', header=None).to_numpy()
+        train_file_names = pd.read_csv(Path(LOG_DIR)/'train'/'paths.tsv' ,sep='\t', header=None)
+        train_file_names = train_file_names[0].to_list(), train_file_names[1].to_list()
+        train_images = None
+    else:
+        train_images, train_labels, train_features, train_file_names = get_images_labels_features(train_dataloader, model_emb, preprocess)
+
+    if LOG_DIR is not None and os.path.exists(Path(LOG_DIR)/'valid'):
+        val_labels = pd.read_csv(Path(LOG_DIR)/'valid'/'metadata.tsv' ,sep='\t', header=None)[0].to_list()
+        val_features = pd.read_csv(Path(LOG_DIR)/'valid'/'features.tsv' ,sep='\t', header=None).to_numpy()
+        val_file_names = pd.read_csv(Path(LOG_DIR)/'valid'/'paths.tsv' ,sep='\t', header=None)
+        val_file_names = val_file_names[0].to_list(), val_file_names[1].to_list()
+        val_images = None
+    else:
+        val_images, val_labels, val_features, val_file_names = get_images_labels_features(val_dataloader, model_emb, preprocess)
 
 
     SS = StandardScaler()
     scaled_train_features = SS.fit_transform(train_features)
     scaled_val_features = SS.transform(val_features)
 
-    best_model = exp_cluster(CLUSTER_MODEL_NAME, N_CLUSTERS, scaled_train_features, scaled_val_features)
+    ## Clustering
+    if out_path is not None and os.path.exists(os.path.join(out_path, "model.joblib")):
 
-    train_clusters = best_model.predict(scaled_train_features)
-    val_clusters = best_model.predict(scaled_val_features)
+        best_model = joblib.load(os.path.join(out_path, "model.joblib"))
+        exp_out = None
+
+        train_clusters = best_model.predict(scaled_train_features)
+        val_clusters = best_model.predict(scaled_val_features)
+
+    else:
+        exp_out = exp_cluster(CLUSTER_MODEL_NAME, N_CLUSTERS, scaled_train_features, scaled_val_features)
+        best_model = exp_out.pop('model')
+        train_clusters = best_model.predict(scaled_train_features)
+        val_clusters = best_model.predict(scaled_val_features)
 
     if LOG_DIR is not None:
-        write_embedding(LOG_DIR, train_images, train_features, [f"{x}_train" for x in train_clusters])
-        write_embedding(LOG_DIR, val_images, val_features, [f"{x}_train" for x in val_clusters])
+        write_embedding(Path(LOG_DIR)/'train', train_images, train_features, [f"{x}_train" for x in train_clusters], paths=train_file_names)
+        write_embedding(Path(LOG_DIR)/'valid', val_images, val_features, [f"{x}_val" for x in val_clusters], paths=val_file_names)
+
 
     if out_path is not None:
-
         cluster_to_json(train_file_names, train_clusters, out_path, "train.json")
-        cluster_to_json(val_file_names, val_clusters, out_path, "train.json")
+        cluster_to_json(val_file_names, val_clusters, out_path, "valid.json")
+        save_cluster_model(best_model, os.path.join(out_path, "model.joblib"))
+
+        if exp_out is not None:
+
+            with open(os.path.join(out_path, "exp.json"), "w+") as f:
+                json.dump(exp_out, f)
+
+
 
         

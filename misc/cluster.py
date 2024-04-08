@@ -19,7 +19,7 @@ def json_to_symlink(
 
         for path, label in js['images'].items():
 
-            if not os.path.exists(os.path.join(out_path, label)):
+            if not os.path.exists(os.path.join(out_path, label, par_dir)):
                 os.makedirs(os.path.join(out_path, f"{label}", par_dir, "images"))
                 os.makedirs(os.path.join(out_path, f"{label}", par_dir, "bin_masks"))            
 
@@ -28,6 +28,10 @@ def json_to_symlink(
 
             src = path
             dst = os.path.join(out_path, f"{label}", par_dir, "images", file_name)
+
+            out_dir = os.path.join(out_path, f"{label}", par_dir, "images")
+            if not os.path.exists(out_dir): os.makedirs(out_dir)
+
             if not os.path.exists(dst):
                 os.symlink(src, dst)
             elif remove_existing:
@@ -40,7 +44,7 @@ def json_to_symlink(
 
         for path, label in js['bin_masks'].items():
 
-            if not os.path.exists(os.path.join(out_path, label)):
+            if not os.path.exists(os.path.join(out_path, label, par_dir)):
                 os.makedirs(os.path.join(out_path, f"{label}", par_dir, "images"))
                 os.makedirs(os.path.join(out_path, f"{label}", par_dir, "bin_masks"))            
 
@@ -95,14 +99,15 @@ def symlink_to_json(
 
 
 if __name__ == "__main__":
-    out_path = "/mnt/dataset/MoNuSeg/patches_256x256_128x128/names_37_14"
+    out_path = "/mnt/dataset/MoNuSeg/patches_256x256_128x128/ResNet18_kmeans_10_v1.1/"
 
-    js_name = "/mnt/dataset/MoNuSeg/patches_256x256_128x128/names_37_14/train.json"
-    par_dir = "MoNuSegTrainingData"
+    modes = {
+        "train.json" : "MoNuSegTrainingData",
+        "valid.json" : "MoNuSegTestData",
+    }
 
-    json_to_symlink(js_name, out_path, par_dir, remove_existing=True)
+    for k, v in modes.items():
+        js_name = os.path.join(out_path, k)
+        par_dir = v
 
-    js_name = "/mnt/dataset/MoNuSeg/patches_256x256_128x128/names_37_14/valid.json"
-    par_dir = "MoNuSegTestData"
-
-    json_to_symlink(js_name, out_path, par_dir, remove_existing=True)    
+        json_to_symlink(js_name, out_path, par_dir, remove_existing=True)

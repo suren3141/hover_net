@@ -43,22 +43,33 @@ def resize_images(img):
 
 def get_images_labels_features(dataloader, model, preprocess):
 
+    def get_file_path(path):
+        if isinstance(path, list):
+            img_path, ann_path = path
+        elif isinstance(path, str):
+            img_path = path
+            ann_path = None
+        else:
+            raise ValueError(type(path))
+
+        is_batch = True if isinstance(img_path, tuple) else False
+
+        return img_path, ann_path
+            
+
+
     images = []
     labels = []
     features = []
-    paths = []
+    img_paths = []
+    ann_paths = []
 
     for batch in tqdm(dataloader, total=len(dataloader)):
         # Step 3: Apply inference preprocessing transforms
         img = batch['img']
         path = batch['path']
 
-        if isinstance(path, (tuple, list)):
-            img_path = path[0]
-        elif isinstance(path, str):
-            img_path = path
-        else:
-            raise ValueError(type(path))
+        img_path, ann_path = get_file_path(path)
 
         assert img.ndim == 4, "Missing batches of RGB"
 
@@ -71,9 +82,10 @@ def get_images_labels_features(dataloader, model, preprocess):
         images.extend(resize_images(img))
         labels.extend(cls)
         features.extend(feature)
-        paths.extend(path)
+        img_paths.extend(img_path)
+        ann_paths.extend(ann_path)
 
-    return images, labels, features, paths
+    return images, labels, features, (img_paths, ann_paths)
 
 
 def extract_features(img, model, preprocess):
@@ -110,28 +122,45 @@ def create_sprite_image(pil_images, save_path):
     master_image.convert('RGB').save(save_path, transparency=0)
     return
 
-def write_embedding(log_dir, pil_images, features, labels):
+def write_embedding(log_dir, pil_images, features, labels, paths=None):
     """Writes embedding data and projector configuration to the logdir."""
     metadata_filename = "metadata.tsv"
+    path_filename = "paths.tsv"
     tensor_filename = "features.tsv"
     npy_filename = "features.npy"
     sprite_image_filename = "sprite.jpg"
- 
-    img = pil_images[0]
-    if is_tensor(img):
-        pil_images = [to_pil_image(t.permute(2, 0, 1)) for t in pil_images]
+
+    os.makedirs(log_dir, exist_ok=True)
  
     print("writing labels...")
-    os.makedirs(log_dir, exist_ok=True)
     with open(os.path.join(log_dir, metadata_filename), "w") as f:
         f.write("{}\n".format('\n'.join([str(l) for l in labels])))
+
+    if paths is not None and len(paths) == 2:
+        print("writing paths...")
+        with open(os.path.join(log_dir, path_filename), "w") as f:
+            img_files, ann_files = paths
+            for i, a in zip(img_files, ann_files):
+                f.write(f"{i}\t{a}\n")
+
     print("writing embeddings...")
     np.save(os.path.join(log_dir, npy_filename), np.array(features))
     with open(os.path.join(log_dir, tensor_filename), "w") as f:
         for tensor in tqdm(features):
             f.write("{}\n".format("\t".join(str(x) for x in tensor)))
- 
+
+    print("writing images...")
     sprite_image_path = os.path.join(log_dir, sprite_image_filename)
+    if pil_images is None:
+        assert os.path.exists(sprite_image_path)
+        img_width, img_height = 64, 64
+    else:
+        if is_tensor(pil_images[0]):
+            pil_images = [to_pil_image(t.permute(2, 0, 1)) for t in pil_images]
+        create_sprite_image(pil_images, sprite_image_path)
+        # Specify the width and height of a single thumbnail.
+        img_width, img_height = pil_images[0].size
+ 
  
     config = projector.ProjectorConfig()
     embedding = config.embeddings.add()
@@ -140,10 +169,7 @@ def write_embedding(log_dir, pil_images, features, labels):
     # Features info.
     embedding.tensor_path = tensor_filename
     # Image info.
-    create_sprite_image(pil_images, sprite_image_path)
     embedding.sprite.image_path = sprite_image_filename
-    # Specify the width and height of a single thumbnail.
-    img_width, img_height = pil_images[0].size
     embedding.sprite.single_image_dim.extend([img_width, img_height])
     # Create the configuration file.
     projector.visualize_embeddings(log_dir, config)
