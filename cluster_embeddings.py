@@ -19,7 +19,7 @@ from torch import nn
 # from torch.nn import DataParallel  # TODO: switch to DistributedDataParallel
 from torch.utils.data import DataLoader
 
-from get_embedding import get_images_labels_features, write_embedding
+from get_embedding import get_images_labels_features, write_embedding, get_emb_model
 
 from dataloader.train_loader import MoNuSegDataset
 from dataloader.utils import get_file_list
@@ -31,10 +31,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 
 from sklearn.mixture import GaussianMixture as GMM
+import sklearn.cluster
+import hdbscan
 from sklearn.cluster import KMeans, SpectralClustering
 from pathlib import Path
 
-
+import umap
 import joblib
 
     
@@ -51,38 +53,45 @@ def plot_clusters(X, labels, cmap=True, ax=None):
     plt.xlabel("U.A.")
     plt.ylabel("U.A.")
 
-def get_emb_model(model_name):
-    
-    if model_name == "ResNet101":
-        weights = ResNet101_Weights.DEFAULT
-        model = resnet101(weights=weights)
-    elif model_name == "ResNet50":
-        weights = ResNet50_Weights.DEFAULT
-        model = resnet50(weights=weights)
-    elif model_name == "ResNet18":
-        weights = ResNet18_Weights.DEFAULT
-        model = resnet18(weights=weights)
-    else:
-        raise NotImplementedError()
 
-    model_emb = nn.Sequential(*list(model.children())[:-1]) # strips off last linear layer
+class ClusterModel():
 
-    model_emb.eval()
+    def __init__(self, cluster_model, **kwargs):
+        self.model_name = cluster_model
+        self.model = ClusterModel.get_cluster_model(cluster_model, **kwargs)
 
-    # Step 2: Initialize the inference transforms
-    preprocess = weights.transforms()
 
-    return model_emb, preprocess
+    @staticmethod
+    def get_cluster_model(cluster_model, **kwargs):
+        if cluster_model == "gmm":
+            f = GMM
+        elif cluster_model == "kmeans":
+            f = KMeans
+        elif cluster_model == "spectral":
+            f = SpectralClustering
+        elif cluster_model == "hdbscan":
+            return hdbscan.HDBSCAN(prediction_data=True, **kwargs)
+        
+        return f(**kwargs)
 
-def get_cluster_model(cluster_model, n_clusters, **kwargs):
-    if cluster_model == "gmm":
-        f = GMM
-    elif cluster_model == "kmeans":
-        f = KMeans
-    if cluster_model == "spectral":
-        f = SpectralClustering
-    
-    return f(n_clusters, **kwargs)
+
+    def save_cluster_model(self, out_name):
+        assert os.path.splitext(out_name)[-1] == ".joblib", "save models with extension joblib"
+        joblib.dump(self.model, out_name)
+
+    def fit(self, *args, **kwargs):
+        if hasattr(self.model, "fit"):
+            return self.model.fit(*args, **kwargs)
+        else:
+            raise NotImplementedError
+
+    def predict(self, *args, **kwargs):
+        if hasattr(self.model, "predict"):
+            return self.model.predict(*args, **kwargs)
+        elif self.model_name == "hdbscan":
+            label, strength = hdbscan.approximate_predict(self.model, *args, **kwargs)
+            return label
+        
 
 def save_cluster_model(model, out_name):
 
@@ -91,7 +100,7 @@ def save_cluster_model(model, out_name):
     joblib.dump(model, out_name)
 
 
-def exp_cluster(cluster_model_name, n_clusters, scaled_train_features, scaled_val_features, iterations=10):
+def exp_cluster(cluster_model_name, model_kwargs, scaled_train_features, scaled_val_features, iterations=10):
 
     bst_sil=[]
     models = []
@@ -99,9 +108,29 @@ def exp_cluster(cluster_model_name, n_clusters, scaled_train_features, scaled_va
     mn_size = []
 
     for it in tqdm(range(iterations)):
-        cluster_model = get_cluster_model(cluster_model_name, n_clusters, n_init=3).fit(scaled_train_features) 
+        cluster_model = ClusterModel(cluster_model_name, **model_kwargs)
+
+        # if hasattr(cluster_model, "predict"):
+        #     cluster_model.fit(scaled_train_features) 
+        #     labels = cluster_model.predict(scaled_val_features)
+        # elif hasattr(cluster_model, "approximate_predict"):
+        #     cluster_model.fit(scaled_train_features) 
+        #     labels = cluster_model.approximate_predict(scaled_val_features)
+        # else:
+        #     labels = cluster_model.fit_predict(list(scaled_train_features) + list(scaled_val_features)) 
+
+        cluster_model.fit(scaled_train_features) 
         labels = cluster_model.predict(scaled_val_features)
+
         unique, counts = np.unique(cluster_model.predict(scaled_train_features), return_counts=True)
+
+        # if hasattr(cluster_model, "predict"):
+        #     unique, counts = np.unique(cluster_model.predict(scaled_train_features), return_counts=True)
+        # elif hasattr(cluster_model, "approximate_predict"):
+        #     unique, counts = np.unique(cluster_model.approximate_predict(scaled_train_features), return_counts=True)
+        # else:
+        #     raise NotImplementedError
+
         try:
             sil=metrics.silhouette_score(scaled_val_features, labels, metric='euclidean')
             bst_sil.append(sil)
@@ -157,18 +186,34 @@ def cluster_to_json(file_names, labels, out_path, json_name):
 
 
 if __name__ == "__main__":
-    EMB_MODEL_NAME = "ResNet18"
-    CLUSTER_MODEL_NAME = "kmeans"
-    N_CLUSTERS = 10
+    EMB_MODEL_NAME = "ResNet50"
+    EMB_TRANSFORM = "umap"
+
+    # CLUSTER_MODEL_NAME = "kmeans"
+    # N_CLUSTERS = 10
+    # model_kwargs = {
+    #     "n_clusters" : N_CLUSTERS, 
+    #     "n_init" : 3,
+    # }
+
+    # CLUSTER_MODEL_NAME = "kmeans"
+    # N_CLUSTERS = 10
+    # model_kwargs = {
+    #     "n_clusters" : N_CLUSTERS, 
+    #     "n_init" : 3,
+    # }
+
+    CLUSTER_MODEL_NAME = "hdbscan"
+    model_kwargs = dict(min_samples=10, min_cluster_size=20)
+
     exp_name = "v1.1"
 
-    LOG_DIR = os.path.join('./logs_clustered', EMB_MODEL_NAME)
+    LOG_DIR = os.path.join('./logs_clustered/MoNuSeg/patches_valid_256x256_128x128', EMB_MODEL_NAME)
 
-    out_path = f"/mnt/dataset/MoNuSeg/patches_256x256_128x128/{EMB_MODEL_NAME}_{CLUSTER_MODEL_NAME}_{N_CLUSTERS}_{exp_name}"
+    out_path = f"/mnt/dataset/MoNuSeg/patches_valid_256x256_128x128/{EMB_MODEL_NAME}_{EMB_TRANSFORM}_{CLUSTER_MODEL_NAME}_{model_kwargs}_{exp_name}"
 
 
     config = Config()
-    log_path = None
 
     training_file_list = get_file_list(config.train_dir_list, config.file_type)
     valid_file_list = get_file_list(config.valid_dir_list, config.file_type)
@@ -176,13 +221,12 @@ if __name__ == "__main__":
     # print("Dataset %s: %d" % (run_mode, len(file_list)))
     train_dataset = MoNuSegDataset(
         training_file_list, file_type=config.file_type, mode="train", with_type=config.type_classification, 
-        target_gen=(gen_targets, {}), **config.shape_info["train"])
+        target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
+    train_dataloader = DataLoader(train_dataset, num_workers= 8, batch_size= 8, shuffle=True, drop_last=False, )
 
     val_dataset = MoNuSegDataset(
         valid_file_list, file_type=config.file_type, mode="valid", with_type=config.type_classification, 
-        target_gen=(gen_targets, {}), **config.shape_info["valid"])
-
-    train_dataloader = DataLoader(train_dataset, num_workers= 8, batch_size= 8, shuffle=True, drop_last=True, )
+        target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
     val_dataloader = DataLoader(val_dataset, num_workers= 8, batch_size= 8, shuffle=False, drop_last=False, )
 
 
@@ -209,9 +253,24 @@ if __name__ == "__main__":
         val_images, val_labels, val_features, val_file_names = get_images_labels_features(val_dataloader, model_emb, preprocess)
 
 
-    SS = StandardScaler()
-    scaled_train_features = SS.fit_transform(train_features)
-    scaled_val_features = SS.transform(val_features)
+    if EMB_TRANSFORM == "ss":
+        SS = StandardScaler()
+        scaled_train_features = SS.fit_transform(train_features)
+        scaled_val_features = SS.transform(val_features)
+    elif EMB_TRANSFORM == "umap":
+        reducer = umap.UMAP(
+            # n_neighbors=30,
+            # min_dist=0.0,
+            n_components=3,
+            random_state=42,
+        )
+        
+        scaled_train_features = reducer.fit_transform(train_features)
+        scaled_val_features = reducer.transform(val_features)
+
+
+    else:
+        raise NotImplementedError()
 
     ## Clustering
     if out_path is not None and os.path.exists(os.path.join(out_path, "model.joblib")):
@@ -223,7 +282,7 @@ if __name__ == "__main__":
         val_clusters = best_model.predict(scaled_val_features)
 
     else:
-        exp_out = exp_cluster(CLUSTER_MODEL_NAME, N_CLUSTERS, scaled_train_features, scaled_val_features)
+        exp_out = exp_cluster(CLUSTER_MODEL_NAME, model_kwargs, scaled_train_features, scaled_val_features)
         best_model = exp_out.pop('model')
         train_clusters = best_model.predict(scaled_train_features)
         val_clusters = best_model.predict(scaled_val_features)
@@ -231,6 +290,7 @@ if __name__ == "__main__":
     if LOG_DIR is not None:
         write_embedding(Path(LOG_DIR)/'train', train_images, train_features, [f"{x}_train" for x in train_clusters], paths=train_file_names)
         write_embedding(Path(LOG_DIR)/'valid', val_images, val_features, [f"{x}_val" for x in val_clusters], paths=val_file_names)
+        write_embedding(Path(LOG_DIR)/'combined', train_images + val_images, list(train_features) + list(val_features),  [f"{x}_train" for x in train_clusters] + [f"{x}_val" for x in val_clusters], paths=train_file_names + val_file_names)
 
 
     if out_path is not None:

@@ -41,6 +41,31 @@ def resize_images(img):
     return [to_pil_image(i.permute(2, 0, 1)).resize((IMG_WIDTH, IMG_HEIGHT)) for i in img]
 
 
+def get_emb_model(model_name):
+    
+    if model_name == "ResNet101":
+        weights = ResNet101_Weights.DEFAULT
+        model = resnet101(weights=weights)
+    elif model_name == "ResNet50":
+        weights = ResNet50_Weights.DEFAULT
+        model = resnet50(weights=weights)
+    elif model_name == "ResNet18":
+        weights = ResNet18_Weights.DEFAULT
+        model = resnet18(weights=weights)
+    else:
+        raise NotImplementedError()
+
+    model_emb = nn.Sequential(*list(model.children())[:-1]) # strips off last linear layer
+
+    model_emb.eval()
+
+    # Step 2: Initialize the inference transforms
+    preprocess = weights.transforms()
+
+    return model_emb, preprocess
+
+
+
 def get_images_labels_features(dataloader, model, preprocess):
 
     def get_file_path(path):

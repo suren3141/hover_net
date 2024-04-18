@@ -1,7 +1,11 @@
 import glob, os, sys
 
 
-def get_file_list(data_dir_list, file_type, ):
+def get_file_list(data_dir_list, file_type, img_path="images", ann_path='bin_masks'):
+    """
+    """
+
+    if isinstance(data_dir_list, str): data_dir_list = [data_dir_list]
 
     file_list = []
 
@@ -13,8 +17,8 @@ def get_file_list(data_dir_list, file_type, ):
 
     elif file_type == '.png':
         for dir_path in data_dir_list:
-            image_files =  glob.glob(os.path.join(dir_path, 'images', '*.png'))
-            ann_files =  glob.glob(os.path.join(dir_path, 'bin_masks', '*.png'))
+            image_files =  glob.glob(os.path.join(dir_path, img_path, '*.png'))
+            ann_files =  glob.glob(os.path.join(dir_path, ann_path, '*.png'))
 
             file_list.extend(list(zip(image_files, ann_files)))
             # file_list.extend(image_files)

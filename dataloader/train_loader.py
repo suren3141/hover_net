@@ -282,10 +282,11 @@ class MoNuSegDataset(torch.utils.data.Dataset):
             feed_dict["tp_map"] = type_map
 
         # TODO: document hard coded assumption about #input
-        target_dict = self.target_gen_func(
-            inst_map, self.mask_shape, **self.target_gen_kwargs
-        )
-        feed_dict.update(target_dict)
+        if self.target_gen_func is not None:
+            target_dict = self.target_gen_func(
+                inst_map, self.mask_shape, **self.target_gen_kwargs
+            )
+            feed_dict.update(target_dict)
 
         return feed_dict
 
