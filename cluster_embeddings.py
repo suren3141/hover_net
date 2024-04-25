@@ -19,7 +19,7 @@ from torch import nn
 # from torch.nn import DataParallel  # TODO: switch to DistributedDataParallel
 from torch.utils.data import DataLoader
 
-from get_embedding import get_images_labels_features, write_embedding, get_emb_model
+from get_embedding import get_images_labels_features, write_embedding, get_emb_model, get_images
 
 from dataloader.train_loader import MoNuSegDataset
 from dataloader.utils import get_file_list
@@ -187,7 +187,14 @@ def cluster_to_json(file_names, labels, out_path, json_name):
 
 if __name__ == "__main__":
     EMB_MODEL_NAME = "ResNet50"
-    EMB_TRANSFORM = "umap"
+    EMB_TRANSFORM = "ss"
+
+    CLUSTER_MODEL_NAME = "kmeans"
+    N_CLUSTERS = 6
+    model_kwargs = {
+        "n_clusters" : N_CLUSTERS, 
+        "n_init" : 3,
+    }
 
     # CLUSTER_MODEL_NAME = "kmeans"
     # N_CLUSTERS = 10
@@ -196,36 +203,32 @@ if __name__ == "__main__":
     #     "n_init" : 3,
     # }
 
-    # CLUSTER_MODEL_NAME = "kmeans"
-    # N_CLUSTERS = 10
-    # model_kwargs = {
-    #     "n_clusters" : N_CLUSTERS, 
-    #     "n_init" : 3,
-    # }
+    # CLUSTER_MODEL_NAME = "hdbscan"
+    # model_kwargs = dict(min_samples=10, min_cluster_size=20)
 
-    CLUSTER_MODEL_NAME = "hdbscan"
-    model_kwargs = dict(min_samples=10, min_cluster_size=20)
-
-    exp_name = "v1.1"
+    exp_name = "v1.2"
+    model_str = f"{CLUSTER_MODEL_NAME}_" + '_'.join([f"{k}_{v}" for (k, v) in model_kwargs.items()])
 
     LOG_DIR = os.path.join('./logs_clustered/MoNuSeg/patches_valid_256x256_128x128', EMB_MODEL_NAME)
 
-    out_path = f"/mnt/dataset/MoNuSeg/patches_valid_256x256_128x128/{EMB_MODEL_NAME}_{EMB_TRANSFORM}_{CLUSTER_MODEL_NAME}_{model_kwargs}_{exp_name}"
+    out_path = f"/mnt/dataset/MoNuSeg/patches_valid_256x256_128x128/{EMB_MODEL_NAME}_{EMB_TRANSFORM}_{model_str}_{exp_name}"
 
+    gt_dirs = {
+        "train": ["/mnt/dataset/MoNuSeg/patches_valid_256x256_128x128/MoNuSegTrainingData"],
+        "test": ["/mnt/dataset/MoNuSeg/patches_valid_256x256_128x128/MoNuSegTestData"],
+    }
 
-    config = Config()
-
-    training_file_list = get_file_list(config.train_dir_list, config.file_type)
-    valid_file_list = get_file_list(config.valid_dir_list, config.file_type)
+    training_file_list = get_file_list(gt_dirs['train'], '.png')
+    valid_file_list = get_file_list(gt_dirs['test'], '.png')
 
     # print("Dataset %s: %d" % (run_mode, len(file_list)))
     train_dataset = MoNuSegDataset(
-        training_file_list, file_type=config.file_type, mode="train", with_type=config.type_classification, 
+        training_file_list, file_type='.png', mode="train", with_type=False, 
         target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
     train_dataloader = DataLoader(train_dataset, num_workers= 8, batch_size= 8, shuffle=True, drop_last=False, )
 
     val_dataset = MoNuSegDataset(
-        valid_file_list, file_type=config.file_type, mode="valid", with_type=config.type_classification, 
+        valid_file_list, file_type='.png', mode="valid", with_type=False, 
         target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
     val_dataloader = DataLoader(val_dataset, num_workers= 8, batch_size= 8, shuffle=False, drop_last=False, )
 
@@ -239,7 +242,7 @@ if __name__ == "__main__":
         train_features = pd.read_csv(Path(LOG_DIR)/'train'/'features.tsv' ,sep='\t', header=None).to_numpy()
         train_file_names = pd.read_csv(Path(LOG_DIR)/'train'/'paths.tsv' ,sep='\t', header=None)
         train_file_names = train_file_names[0].to_list(), train_file_names[1].to_list()
-        train_images = None
+        train_images = get_images(train_file_names[0])
     else:
         train_images, train_labels, train_features, train_file_names = get_images_labels_features(train_dataloader, model_emb, preprocess)
 
@@ -248,11 +251,12 @@ if __name__ == "__main__":
         val_features = pd.read_csv(Path(LOG_DIR)/'valid'/'features.tsv' ,sep='\t', header=None).to_numpy()
         val_file_names = pd.read_csv(Path(LOG_DIR)/'valid'/'paths.tsv' ,sep='\t', header=None)
         val_file_names = val_file_names[0].to_list(), val_file_names[1].to_list()
-        val_images = None
+        val_images = get_images(val_file_names[0])
     else:
         val_images, val_labels, val_features, val_file_names = get_images_labels_features(val_dataloader, model_emb, preprocess)
 
 
+    ## Feature transform
     if EMB_TRANSFORM == "ss":
         SS = StandardScaler()
         scaled_train_features = SS.fit_transform(train_features)
