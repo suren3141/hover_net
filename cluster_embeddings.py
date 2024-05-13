@@ -19,7 +19,8 @@ from torch import nn
 # from torch.nn import DataParallel  # TODO: switch to DistributedDataParallel
 from torch.utils.data import DataLoader
 
-from get_embedding import get_images_labels_features, write_embedding, get_emb_model
+from get_embedding import get_images_labels_features, get_emb_model, get_images
+from get_embedding import write_embedding, overwrite_embedding_classes
 
 from dataloader.train_loader import MoNuSegDataset
 from dataloader.utils import get_file_list
@@ -34,8 +35,9 @@ from sklearn.mixture import GaussianMixture as GMM
 import sklearn.cluster
 import hdbscan
 from sklearn.cluster import KMeans, SpectralClustering
-from pathlib import Path
+from sklearn.decomposition import PCA  # to apply PCA
 
+from pathlib import Path
 import umap
 import joblib
 
@@ -189,74 +191,72 @@ if __name__ == "__main__":
     EMB_MODEL_NAME = "ResNet50"
     EMB_TRANSFORM = "umap"
 
-    # CLUSTER_MODEL_NAME = "kmeans"
-    # N_CLUSTERS = 10
-    # model_kwargs = {
-    #     "n_clusters" : N_CLUSTERS, 
-    #     "n_init" : 3,
-    # }
+    CLUSTER_MODEL_NAME = "kmeans"
+    N_CLUSTERS = 5
+    model_kwargs = {
+        "n_clusters" : N_CLUSTERS, 
+        "n_init" : 3,
+    }
 
-    # CLUSTER_MODEL_NAME = "kmeans"
-    # N_CLUSTERS = 10
-    # model_kwargs = {
-    #     "n_clusters" : N_CLUSTERS, 
-    #     "n_init" : 3,
-    # }
+    # CLUSTER_MODEL_NAME = "hdbscan"
+    # model_kwargs = dict(min_samples=10, min_cluster_size=20)
 
-    CLUSTER_MODEL_NAME = "hdbscan"
-    model_kwargs = dict(min_samples=10, min_cluster_size=20)
+    exp_name = "v1.2"
+    kwargs_txt = "_".join([f"{k}_{v}" for k,v in model_kwargs.items()])
 
-    exp_name = "v1.1"
+    LOG_DIR = os.path.join('./logs_clustered/MoNuSeg/patches_valid_inst_256x256_128x128', EMB_MODEL_NAME)
 
-    LOG_DIR = os.path.join('./logs_clustered/MoNuSeg/patches_valid_256x256_128x128', EMB_MODEL_NAME)
-
-    out_path = f"/mnt/dataset/MoNuSeg/patches_valid_256x256_128x128/{EMB_MODEL_NAME}_{EMB_TRANSFORM}_{CLUSTER_MODEL_NAME}_{model_kwargs}_{exp_name}"
-
-
-    config = Config()
-
-    training_file_list = get_file_list(config.train_dir_list, config.file_type)
-    valid_file_list = get_file_list(config.valid_dir_list, config.file_type)
-
-    # print("Dataset %s: %d" % (run_mode, len(file_list)))
-    train_dataset = MoNuSegDataset(
-        training_file_list, file_type=config.file_type, mode="train", with_type=config.type_classification, 
-        target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
-    train_dataloader = DataLoader(train_dataset, num_workers= 8, batch_size= 8, shuffle=True, drop_last=False, )
-
-    val_dataset = MoNuSegDataset(
-        valid_file_list, file_type=config.file_type, mode="valid", with_type=config.type_classification, 
-        target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
-    val_dataloader = DataLoader(val_dataset, num_workers= 8, batch_size= 8, shuffle=False, drop_last=False, )
-
+    out_path = f"/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/{EMB_MODEL_NAME}_{EMB_TRANSFORM}_{CLUSTER_MODEL_NAME}_{kwargs_txt}_{exp_name}"
+    input_path = "/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128"
 
 
     model_emb, preprocess = get_emb_model(EMB_MODEL_NAME)
 
     ## Feature extraction
-    if LOG_DIR is not None and os.path.exists(Path(LOG_DIR)/'train'):
+    if LOG_DIR is not None and os.path.exists(Path(LOG_DIR)/'train') and os.path.exists(Path(LOG_DIR)/'valid'):
         train_labels = pd.read_csv(Path(LOG_DIR)/'train'/'metadata.tsv' ,sep='\t', header=None)[0].to_list()
         train_features = pd.read_csv(Path(LOG_DIR)/'train'/'features.tsv' ,sep='\t', header=None).to_numpy()
         train_file_names = pd.read_csv(Path(LOG_DIR)/'train'/'paths.tsv' ,sep='\t', header=None)
         train_file_names = train_file_names[0].to_list(), train_file_names[1].to_list()
-        train_images = None
-    else:
-        train_images, train_labels, train_features, train_file_names = get_images_labels_features(train_dataloader, model_emb, preprocess)
+        train_images = get_images(train_file_names[0])
 
-    if LOG_DIR is not None and os.path.exists(Path(LOG_DIR)/'valid'):
         val_labels = pd.read_csv(Path(LOG_DIR)/'valid'/'metadata.tsv' ,sep='\t', header=None)[0].to_list()
         val_features = pd.read_csv(Path(LOG_DIR)/'valid'/'features.tsv' ,sep='\t', header=None).to_numpy()
         val_file_names = pd.read_csv(Path(LOG_DIR)/'valid'/'paths.tsv' ,sep='\t', header=None)
         val_file_names = val_file_names[0].to_list(), val_file_names[1].to_list()
-        val_images = None
+        val_images = get_images(val_file_names[0])
+
     else:
+
+        training_file_list = get_file_list([input_path + "/MoNuSegTrainingData"], ".png")
+        valid_file_list = get_file_list([input_path + "/MoNuSegTestData"], ".png")
+
+        # print("Dataset %s: %d" % (run_mode, len(file_list)))
+        train_dataset = MoNuSegDataset(
+            training_file_list, file_type=".png", mode="train", with_type=False, 
+            target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
+        train_dataloader = DataLoader(train_dataset, num_workers= 8, batch_size= 8, shuffle=True, drop_last=False, )
+
+        val_dataset = MoNuSegDataset(
+            valid_file_list, file_type=".png", mode="valid", with_type=False, 
+            target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
+        val_dataloader = DataLoader(val_dataset, num_workers= 8, batch_size= 8, shuffle=False, drop_last=False, )
+
+        train_images, train_labels, train_features, train_file_names = get_images_labels_features(train_dataloader, model_emb, preprocess)
         val_images, val_labels, val_features, val_file_names = get_images_labels_features(val_dataloader, model_emb, preprocess)
 
+        write_embedding(Path(LOG_DIR)/'train', train_images, train_features, train_labels, paths=train_file_names)
+        write_embedding(Path(LOG_DIR)/'valid', val_images, val_features, val_labels, paths=val_file_names)
+        write_embedding(Path(LOG_DIR)/'combined', train_images + val_images, list(train_features) + list(val_features),  train_labels + val_labels, paths=train_file_names + val_file_names)
+
+
+    SS = StandardScaler()
+    scaled_train_features = SS.fit_transform(train_features)
+    scaled_val_features = SS.transform(val_features)
 
     if EMB_TRANSFORM == "ss":
-        SS = StandardScaler()
-        scaled_train_features = SS.fit_transform(train_features)
-        scaled_val_features = SS.transform(val_features)
+        pass
+
     elif EMB_TRANSFORM == "umap":
         reducer = umap.UMAP(
             # n_neighbors=30,
@@ -265,8 +265,14 @@ if __name__ == "__main__":
             random_state=42,
         )
         
-        scaled_train_features = reducer.fit_transform(train_features)
-        scaled_val_features = reducer.transform(val_features)
+        scaled_train_features = reducer.fit_transform(scaled_train_features)
+        scaled_val_features = reducer.transform(scaled_val_features)
+
+    elif EMB_TRANSFORM == "pca":
+        pca = PCA(n_components=5)
+
+        scaled_train_features = pca.fit_transform(scaled_train_features)
+        scaled_val_features = pca.transform(scaled_val_features)
 
 
     else:
@@ -287,10 +293,14 @@ if __name__ == "__main__":
         train_clusters = best_model.predict(scaled_train_features)
         val_clusters = best_model.predict(scaled_val_features)
 
-    if LOG_DIR is not None:
-        write_embedding(Path(LOG_DIR)/'train', train_images, train_features, [f"{x}_train" for x in train_clusters], paths=train_file_names)
-        write_embedding(Path(LOG_DIR)/'valid', val_images, val_features, [f"{x}_val" for x in val_clusters], paths=val_file_names)
-        write_embedding(Path(LOG_DIR)/'combined', train_images + val_images, list(train_features) + list(val_features),  [f"{x}_train" for x in train_clusters] + [f"{x}_val" for x in val_clusters], paths=train_file_names + val_file_names)
+    overwrite_embedding_classes(Path(LOG_DIR)/'train', [f"{x}_train" for x in train_clusters])
+    overwrite_embedding_classes(Path(LOG_DIR)/'valid', [f"{x}_val" for x in val_clusters])
+    overwrite_embedding_classes(Path(LOG_DIR)/'combined', [f"{x}_train" for x in train_clusters] + [f"{x}_val" for x in val_clusters])
+
+    # if LOG_DIR is not None:
+    #     write_embedding(Path(LOG_DIR)/'train', train_images, train_features, [f"{x}_train" for x in train_clusters], paths=train_file_names)
+    #     write_embedding(Path(LOG_DIR)/'valid', val_images, val_features, [f"{x}_val" for x in val_clusters], paths=val_file_names)
+    #     write_embedding(Path(LOG_DIR)/'combined', train_images + val_images, list(train_features) + list(val_features),  [f"{x}_train" for x in train_clusters] + [f"{x}_val" for x in val_clusters], paths=train_file_names + val_file_names)
 
 
     if out_path is not None:
@@ -299,7 +309,7 @@ if __name__ == "__main__":
         save_cluster_model(best_model, os.path.join(out_path, "model.joblib"))
 
         if exp_out is not None:
-
+            print(exp_out)
             with open(os.path.join(out_path, "exp.json"), "w+") as f:
                 json.dump(exp_out, f)
 

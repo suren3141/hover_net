@@ -113,6 +113,19 @@ def get_images_labels_features(dataloader, model, preprocess):
     return images, labels, features, (img_paths, ann_paths)
 
 
+def get_images(file_names):
+
+    images = []
+
+    for file in file_names:
+        with Image.open(file) as img:
+            img = img.convert('RGB').resize((IMG_WIDTH, IMG_HEIGHT))
+            images.append(img)
+
+    return images
+
+
+
 def extract_features(img, model, preprocess):
 
     batch = preprocess(img)
@@ -146,6 +159,14 @@ def create_sprite_image(pil_images, save_path):
  
     master_image.convert('RGB').save(save_path, transparency=0)
     return
+
+def overwrite_embedding_classes(log_dir, labels):
+    metadata_filename = "metadata.tsv"
+
+    print("writing labels...")
+    with open(os.path.join(log_dir, metadata_filename), "w") as f:
+        f.write("{}\n".format('\n'.join([str(l) for l in labels])))
+
 
 def write_embedding(log_dir, pil_images, features, labels, paths=None):
     """Writes embedding data and projector configuration to the logdir."""
