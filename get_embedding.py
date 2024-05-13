@@ -38,7 +38,10 @@ def get_class(path):
     return cls
 
 def resize_images(img):
-    return [to_pil_image(i.permute(2, 0, 1)).resize((IMG_WIDTH, IMG_HEIGHT)) for i in img]
+    if is_tensor(img[0]):
+        return [to_pil_image(i.permute(2, 0, 1)).resize((IMG_WIDTH, IMG_HEIGHT)) for i in img]
+    elif isinstance(img[0], np.ndarray):
+        return [Image.fromarray(i).resize((IMG_WIDTH, IMG_HEIGHT)) for i in img]
 
 
 def get_emb_model(model_name):
@@ -66,21 +69,20 @@ def get_emb_model(model_name):
 
 
 
-def get_images_labels_features(dataloader, model, preprocess):
+def get_file_path(path):
+    if isinstance(path, list):
+        img_path, ann_path = path
+    elif isinstance(path, str):
+        img_path = path
+        ann_path = None
+    else:
+        raise ValueError(type(path))
 
-    def get_file_path(path):
-        if isinstance(path, list):
-            img_path, ann_path = path
-        elif isinstance(path, str):
-            img_path = path
-            ann_path = None
-        else:
-            raise ValueError(type(path))
+    is_batch = True if isinstance(img_path, tuple) else False
 
-        is_batch = True if isinstance(img_path, tuple) else False
+    return img_path, ann_path
 
-        return img_path, ann_path
-            
+def get_images_labels_features(dataloader, model, preprocess):            
 
 
     images = []
@@ -111,6 +113,17 @@ def get_images_labels_features(dataloader, model, preprocess):
         ann_paths.extend(ann_path)
 
     return images, labels, features, (img_paths, ann_paths)
+
+def get_images(paths):
+    images = []
+    for path in paths:
+        img_path, ann_path = get_file_path(path)
+        img = np.array(Image.open(img_path).convert('RGB'))
+        images.extend(resize_images([img]))
+
+    return images
+
+
 
 
 def get_images(file_names):

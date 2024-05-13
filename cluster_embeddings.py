@@ -189,7 +189,7 @@ def cluster_to_json(file_names, labels, out_path, json_name):
 
 if __name__ == "__main__":
     EMB_MODEL_NAME = "ResNet50"
-    EMB_TRANSFORM = "umap"
+    EMB_TRANSFORM = "ss"
 
     CLUSTER_MODEL_NAME = "kmeans"
     N_CLUSTERS = 5
@@ -225,7 +225,6 @@ if __name__ == "__main__":
         val_file_names = pd.read_csv(Path(LOG_DIR)/'valid'/'paths.tsv' ,sep='\t', header=None)
         val_file_names = val_file_names[0].to_list(), val_file_names[1].to_list()
         val_images = get_images(val_file_names[0])
-
     else:
 
         training_file_list = get_file_list([input_path + "/MoNuSegTrainingData"], ".png")
@@ -254,6 +253,7 @@ if __name__ == "__main__":
     scaled_train_features = SS.fit_transform(train_features)
     scaled_val_features = SS.transform(val_features)
 
+    ## Feature transform
     if EMB_TRANSFORM == "ss":
         pass
 
@@ -313,6 +313,3 @@ if __name__ == "__main__":
             with open(os.path.join(out_path, "exp.json"), "w+") as f:
                 json.dump(exp_out, f)
 
-
-
-        
