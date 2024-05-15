@@ -1,9 +1,13 @@
-import os
+import os, sys
 from glob import glob
+
+sys.path.append('/workspace/hover_net')
 
 import json
 from pathlib import Path
 
+from dataloader.utils import get_file_list
+import numpy as np
 
 
 def link(src, dst, remove_existing=False):
@@ -124,16 +128,46 @@ def symlink_to_json(
 
 
 if __name__ == "__main__":
+    subsample = .1/.25
+
+    input_path = "/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/25ss"
     # out_path = "/mnt/dataset/MoNuSeg/patches_256x256_128x128/ResNet18_kmeans_10_v1.1/"
-    out_path = "/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/color_rand_ResNet50_umap_n_components_3_random_state_42_hdbscan_min_samples_10_min_cluster_size_50_v1.2"
 
-    modes = {
-        "train.json" : "MoNuSegTrainingData",
-        "valid.json" : "MoNuSegTestData",
-    }
+    out_path = "/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/10ss"
+    mode = "MoNuSegTrainingData"
 
-    for k, v in modes.items():
-        js_name = os.path.join(out_path, k)
-        par_dir = v
+    os.makedirs(os.path.join(out_path, mode, "images"), exist_ok=True)
+    os.makedirs(os.path.join(out_path, mode, "bin_masks"), exist_ok=True)
+    os.makedirs(os.path.join(out_path, mode, "inst_masks"), exist_ok=True)
 
-        json_to_symlink(js_name, out_path, par_dir, remove_existing=True)
+    training_file_list = get_file_list([input_path + "/MoNuSegTrainingData"], ".png", inst_path="inst_masks")
+    valid_file_list = get_file_list([input_path + "/MoNuSegTestData"], ".png", inst_path="inst_masks")
+
+    if subsample is not None:
+        np.random.seed(42)
+        ind = np.random.choice(len(training_file_list), int(len(training_file_list)*float(subsample)), replace=False)
+        ss_training_file_list = [training_file_list[i] for i in ind]
+
+    # Training data
+    for path in ss_training_file_list:
+        img, ann, inst = path
+
+        par_path = Path(img).parent.parent
+        file_name = os.path.basename(img)
+
+        # images
+        dst = os.path.join(out_path, mode, "images", file_name)
+        link(img, dst)
+
+        # ann
+        dst = os.path.join(out_path, mode, "bin_masks", file_name)
+        link(ann, dst)
+
+        # instance
+        dst = os.path.join(out_path, mode, "inst_masks", file_name[:-3] + 'tif')
+        link(inst, dst)
+
+
+    # Validation data
+    link(input_path + "/MoNuSegTestData", out_path + "/MoNuSegTestData")
+

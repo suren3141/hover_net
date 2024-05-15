@@ -14,7 +14,8 @@ from config_monuseg import Config
 # from torchvision.io import read_image
 from torchvision.models import resnet50, ResNet50_Weights, resnet18, ResNet18_Weights
 from torchvision.models import resnet101, ResNet101_Weights
-from torch import nn
+import torch
+from torch import nn, tensor
 
 # from torch.nn import DataParallel  # TODO: switch to DistributedDataParallel
 from torch.utils.data import DataLoader
@@ -93,6 +94,8 @@ class ClusterModel():
         elif self.model_name == "hdbscan":
             label, strength = hdbscan.approximate_predict(self.model, *args, **kwargs)
             return label
+        else:
+            raise NotImplementedError
         
 
 def save_cluster_model(model, out_name):
@@ -102,7 +105,7 @@ def save_cluster_model(model, out_name):
     joblib.dump(model, out_name)
 
 
-def exp_cluster(cluster_model_name, model_kwargs, scaled_train_features, scaled_val_features, iterations=10):
+def exp_cluster(cluster_model_name, model_kwargs, scaled_train_features, scaled_val_features, val_features=None, iterations=10):
 
     bst_sil=[]
     models = []
@@ -134,7 +137,8 @@ def exp_cluster(cluster_model_name, model_kwargs, scaled_train_features, scaled_
         #     raise NotImplementedError
 
         try:
-            sil=metrics.silhouette_score(scaled_val_features, labels, metric='euclidean')
+            x = scaled_val_features if val_features is None else val_features
+            sil=metrics.silhouette_score(x, labels, metric='euclidean')
             bst_sil.append(sil)
             models.append(cluster_model)
             mx_size.append(np.max(counts)/sum(counts))
@@ -188,29 +192,52 @@ def cluster_to_json(file_names, labels, out_path, json_name):
 
 
 if __name__ == "__main__":
+    PREPROCESS = "color_rand"
+
     EMB_MODEL_NAME = "ResNet50"
-    EMB_TRANSFORM = "ss"
 
-    CLUSTER_MODEL_NAME = "kmeans"
-    N_CLUSTERS = 5
-    model_kwargs = {
-        "n_clusters" : N_CLUSTERS, 
-        "n_init" : 3,
-    }
+    EMB_TRANSFORM = "umap"
+    emb_kwargs = dict(
+        n_components= 3, 
+        random_state= 42,
+    )
 
-    # CLUSTER_MODEL_NAME = "hdbscan"
-    # model_kwargs = dict(min_samples=10, min_cluster_size=20)
+    EMB_TRANSFORM = "pca"
+    emb_kwargs = dict(
+        n_components= 3, 
+        random_state= 42,
+    )
+
+    emb_txt = "_".join([f"{k}_{v}" for k,v in emb_kwargs.items()])
+
+
+    # CLUSTER_MODEL_NAME = "kmeans"
+    # N_CLUSTERS = 10
+    # model_kwargs = {
+    #     "n_clusters" : N_CLUSTERS, 
+    #     "n_init" : 3,
+    # }
+
+    # CLUSTER_MODEL_NAME = "spectral"
+    # N_CLUSTERS = 10
+    # model_kwargs = {
+    #     "n_clusters" : N_CLUSTERS, 
+    #     "n_init" : 3,
+    # }
+
+    CLUSTER_MODEL_NAME = "hdbscan"
+    model_kwargs = dict(min_samples=10, min_cluster_size=50)
 
     exp_name = "v1.2"
     kwargs_txt = "_".join([f"{k}_{v}" for k,v in model_kwargs.items()])
 
-    LOG_DIR = os.path.join('./logs_clustered/MoNuSeg/patches_valid_inst_256x256_128x128', EMB_MODEL_NAME)
+    LOG_DIR = os.path.join('./logs_clustered/MoNuSeg/patches_valid_inst_256x256_128x128', f"{PREPROCESS}_{EMB_MODEL_NAME}")
 
-    out_path = f"/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/{EMB_MODEL_NAME}_{EMB_TRANSFORM}_{CLUSTER_MODEL_NAME}_{kwargs_txt}_{exp_name}"
     input_path = "/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128"
+    out_path = f"/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/{PREPROCESS}_{EMB_MODEL_NAME}_{EMB_TRANSFORM}_{emb_txt}_{CLUSTER_MODEL_NAME}_{kwargs_txt}_{exp_name}"
+    # out_path = f"/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/{EMB_MODEL_NAME}_{EMB_TRANSFORM}_{emb_txt}_{CLUSTER_MODEL_NAME}_{kwargs_txt}_{exp_name}"
+    print(out_path)
 
-
-    model_emb, preprocess = get_emb_model(EMB_MODEL_NAME)
 
     ## Feature extraction
     if LOG_DIR is not None and os.path.exists(Path(LOG_DIR)/'train') and os.path.exists(Path(LOG_DIR)/'valid'):
@@ -227,6 +254,8 @@ if __name__ == "__main__":
         val_images = get_images(val_file_names[0])
     else:
 
+        model_emb, preprocess = get_emb_model(EMB_MODEL_NAME)
+
         training_file_list = get_file_list([input_path + "/MoNuSegTrainingData"], ".png")
         valid_file_list = get_file_list([input_path + "/MoNuSegTestData"], ".png")
 
@@ -241,38 +270,55 @@ if __name__ == "__main__":
             target_gen=(None, None), input_shape=(256,256), mask_shape=(256,256))
         val_dataloader = DataLoader(val_dataset, num_workers= 8, batch_size= 8, shuffle=False, drop_last=False, )
 
-        train_images, train_labels, train_features, train_file_names = get_images_labels_features(train_dataloader, model_emb, preprocess)
-        val_images, val_labels, val_features, val_file_names = get_images_labels_features(val_dataloader, model_emb, preprocess)
+        if PREPROCESS == "color_sort":
+            def pixel_sort(img):
+                img = img.numpy()
+                sh = img.shape
+                img = list(map(tuple, img.reshape(-1, 3)))
+                img.sort()
+                img = np.array(img).reshape(sh)
+                return tensor(img)
+            PREPROCESS_IMG = pixel_sort
+        elif PREPROCESS == "color_rand":
+            def pixel_shuffle(images):
+                n, h, w, c = images.shape
+                shuffle_idx = torch.randperm(h*w)
+                data = torch.stack([x.view(-1, c)[shuffle_idx].view(h, w, c) for x in images], dim=0)
+                return data
+            PREPROCESS_IMG = pixel_shuffle
+        else:
+            PREPROCESS_IMG = None
+
+        train_images, train_labels, train_features, train_file_names = get_images_labels_features(train_dataloader, model_emb, preprocess, PREPROCESS_IMG=PREPROCESS_IMG)
+        val_images, val_labels, val_features, val_file_names = get_images_labels_features(val_dataloader, model_emb, preprocess, PREPROCESS_IMG=PREPROCESS_IMG)
 
         write_embedding(Path(LOG_DIR)/'train', train_images, train_features, train_labels, paths=train_file_names)
         write_embedding(Path(LOG_DIR)/'valid', val_images, val_features, val_labels, paths=val_file_names)
         write_embedding(Path(LOG_DIR)/'combined', train_images + val_images, list(train_features) + list(val_features),  train_labels + val_labels, paths=train_file_names + val_file_names)
 
 
-    SS = StandardScaler()
-    scaled_train_features = SS.fit_transform(train_features)
-    scaled_val_features = SS.transform(val_features)
-
     ## Feature transform
     if EMB_TRANSFORM == "ss":
-        pass
+        SS = StandardScaler()
+        scaled_train_features = SS.fit_transform(train_features)
+        scaled_val_features = SS.transform(val_features)
 
     elif EMB_TRANSFORM == "umap":
         reducer = umap.UMAP(
             # n_neighbors=30,
-            # min_dist=0.0,
-            n_components=3,
-            random_state=42,
+            # min_dist=0.0, 
+            **emb_kwargs
         )
         
-        scaled_train_features = reducer.fit_transform(scaled_train_features)
-        scaled_val_features = reducer.transform(scaled_val_features)
+        scaled_train_features = reducer.fit_transform(train_features)
+        scaled_val_features = reducer.transform(val_features)
+
 
     elif EMB_TRANSFORM == "pca":
-        pca = PCA(n_components=5)
+        pca = PCA(**emb_kwargs)
 
-        scaled_train_features = pca.fit_transform(scaled_train_features)
-        scaled_val_features = pca.transform(scaled_val_features)
+        scaled_train_features = pca.fit_transform(train_features)
+        scaled_val_features = pca.transform(val_features)
 
 
     else:
@@ -288,7 +334,7 @@ if __name__ == "__main__":
         val_clusters = best_model.predict(scaled_val_features)
 
     else:
-        exp_out = exp_cluster(CLUSTER_MODEL_NAME, model_kwargs, scaled_train_features, scaled_val_features)
+        exp_out = exp_cluster(CLUSTER_MODEL_NAME, model_kwargs, scaled_train_features, scaled_val_features, val_features=val_features)
         best_model = exp_out.pop('model')
         train_clusters = best_model.predict(scaled_train_features)
         val_clusters = best_model.predict(scaled_val_features)
@@ -304,9 +350,11 @@ if __name__ == "__main__":
 
 
     if out_path is not None:
-        cluster_to_json(train_file_names, train_clusters, out_path, "train.json")
-        cluster_to_json(val_file_names, val_clusters, out_path, "valid.json")
-        save_cluster_model(best_model, os.path.join(out_path, "model.joblib"))
+
+        if not os.path.exists(os.path.join(out_path, "train.json")):
+            cluster_to_json(train_file_names, train_clusters, out_path, "train.json")
+            cluster_to_json(val_file_names, val_clusters, out_path, "valid.json")
+            save_cluster_model(best_model, os.path.join(out_path, "model.joblib"))
 
         if exp_out is not None:
             print(exp_out)
