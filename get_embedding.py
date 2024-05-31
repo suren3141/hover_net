@@ -52,6 +52,8 @@ def get_emb_model(model_name):
     elif model_name == "ResNet18":
         weights = ResNet18_Weights.DEFAULT
         model = resnet18(weights=weights)
+    elif model_name == "color":
+        raise NotImplementedError()        
     else:
         raise NotImplementedError()
 
@@ -79,7 +81,7 @@ def get_file_path(path):
 
     return img_path, ann_path
 
-def get_images_labels_features(dataloader, model, preprocess):            
+def get_images_labels_features(dataloader, model, preprocess, PREPROCESS_IMG=None):            
 
 
     images = []
@@ -92,6 +94,10 @@ def get_images_labels_features(dataloader, model, preprocess):
         # Step 3: Apply inference preprocessing transforms
         img = batch['img']
         path = batch['path']
+
+        if PREPROCESS_IMG:
+            img = PREPROCESS_IMG(img)
+
 
         img_path, ann_path = get_file_path(path)
 
