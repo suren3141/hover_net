@@ -25,8 +25,11 @@ import json
 import os
 import shutil
 
-import matplotlib
 import numpy as np
+np.bool = np.bool_
+
+import matplotlib
+# import numpy as np
 import torch
 from docopt import docopt
 

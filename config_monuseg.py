@@ -45,11 +45,11 @@ class Config(object):
                 raise Exception("If using `fast` mode, input shape must be [256,256] and output shape must be [164,164]")
 
         self.dataset_name = "monuseg" # extracts dataset info from dataset.py
-        self.log_dir = "logs/" # where checkpoints will be saved
+        self.log_dir = "/mnt/dataset/hovernet/config" # where checkpoints will be saved
 
         # paths to training and validation patches
         self.train_dir_list = [
-            "/mnt/dataset/MoNuSeg/patches_valid_256x256_128x128/MoNuSegTrainingData/"
+            "/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/MoNuSegTrainingData/"
             # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/0/MoNuSegTrainingData/",
             # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/1/MoNuSegTrainingData/",
             # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/2/MoNuSegTrainingData/",
@@ -57,7 +57,7 @@ class Config(object):
             # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/4/MoNuSegTrainingData/"
         ]
         self.valid_dir_list = [
-            "/mnt/dataset/MoNuSeg/patches_valid_256x256_128x128/MoNuSegTestData/"
+            "/mnt/dataset/MoNuSeg/patches_valid_inst_256x256_128x128/MoNuSegTestData/"
             # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/1/MoNuSegTestData/",
             # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/2/MoNuSegTestData/",
             # "/mnt/dataset/MoNuSeg/patches_256x256_128x128/gmm_5/3/MoNuSegTestData/",

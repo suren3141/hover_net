@@ -77,7 +77,7 @@ class __MoNuSeg(__AbstractDataset):
 
         return np.array(pil_image)
 
-    def load_ann(self, path, with_type=False):
+    def load_bin(self, path, with_type=False):
         assert not with_type, "Not support"
         # assumes that ann is HxW
         with bf.BlobFile(path, "rb") as f:
@@ -88,6 +88,19 @@ class __MoNuSeg(__AbstractDataset):
         ann = np.expand_dims(ann_inst, -1)
         return ann
 
+    def load_inst(self, path, with_type=False):
+        assert not with_type, "Not support"
+        # assumes that ann is HxW
+        with bf.BlobFile(path, "rb") as f:
+            pil_class = Image.open(f)
+            pil_class.load()
+        # pil_class = pil_class.convert("I")
+        ann_inst = np.array(pil_class)
+        ann = np.expand_dims(ann_inst, -1)
+        return ann
+    
+    def load_ann(self, path, with_type=False):
+        return self.load_inst(path, with_type)
 
 ####
 class __CoNSeP(__AbstractDataset):
