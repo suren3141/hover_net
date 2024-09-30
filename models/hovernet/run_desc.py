@@ -206,6 +206,8 @@ def viz_step_output(raw_data, nr_types=None):
 
     imgs = raw_data["img"]
     true_np, pred_np = raw_data["np"]
+    true_np = np.expand_dims(true_np, axis=-1)
+    pred_np = np.expand_dims(pred_np, axis=-1)
     true_hv, pred_hv = raw_data["hv"]
     if nr_types is not None:
         true_tp, pred_tp = raw_data["tp"]

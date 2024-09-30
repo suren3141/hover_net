@@ -1,11 +1,9 @@
 # from torchvision.io import read_image
 from torchvision.models import resnet50, ResNet50_Weights, resnet18, ResNet18_Weights
+from torch import nn, is_tensor
 
 # from torch.nn import DataParallel  # TODO: switch to DistributedDataParallel
 from torch.utils.data import DataLoader
-from torch import nn, is_tensor
-
-from torchvision.transforms.functional import to_pil_image
 
 from config_monuseg import Config
 from dataloader.train_loader import FileLoader, MoNuSegDataset
@@ -21,7 +19,6 @@ import os
 import re
 from run_train import TrainManager
 
-from tensorboard.plugins import projector
 from tqdm import tqdm
 
 from typing import Union
@@ -38,24 +35,53 @@ def get_class(path):
     return cls
 
 def resize_images(img):
-    return [to_pil_image(i.permute(2, 0, 1)).resize((IMG_WIDTH, IMG_HEIGHT)) for i in img]
+    if is_tensor(img[0]):
+        return [to_pil_image(i.permute(2, 0, 1)).resize((IMG_WIDTH, IMG_HEIGHT)) for i in img]
+    elif isinstance(img[0], np.ndarray):
+        return [Image.fromarray(i).resize((IMG_WIDTH, IMG_HEIGHT)) for i in img]
 
 
-def get_images_labels_features(dataloader, model, preprocess):
+def get_emb_model(model_name):
+    
+    if model_name == "ResNet101":
+        weights = ResNet101_Weights.DEFAULT
+        model = resnet101(weights=weights)
+    elif model_name == "ResNet50":
+        weights = ResNet50_Weights.DEFAULT
+        model = resnet50(weights=weights)
+    elif model_name == "ResNet18":
+        weights = ResNet18_Weights.DEFAULT
+        model = resnet18(weights=weights)
+    elif model_name == "color":
+        raise NotImplementedError()        
+    else:
+        raise NotImplementedError()
 
-    def get_file_path(path):
-        if isinstance(path, list):
-            img_path, ann_path = path
-        elif isinstance(path, str):
-            img_path = path
-            ann_path = None
-        else:
-            raise ValueError(type(path))
+    model_emb = nn.Sequential(*list(model.children())[:-1]) # strips off last linear layer
 
-        is_batch = True if isinstance(img_path, tuple) else False
+    model_emb.eval()
 
-        return img_path, ann_path
-            
+    # Step 2: Initialize the inference transforms
+    preprocess = weights.transforms()
+
+    return model_emb, preprocess
+
+
+
+def get_file_path(path):
+    if isinstance(path, list):
+        img_path, ann_path = path
+    elif isinstance(path, str):
+        img_path = path
+        ann_path = None
+    else:
+        raise ValueError(type(path))
+
+    is_batch = True if isinstance(img_path, tuple) else False
+
+    return img_path, ann_path
+
+def get_images_labels_features(dataloader, model, preprocess, PREPROCESS_IMG=None):            
 
 
     images = []
@@ -68,6 +94,10 @@ def get_images_labels_features(dataloader, model, preprocess):
         # Step 3: Apply inference preprocessing transforms
         img = batch['img']
         path = batch['path']
+
+        if PREPROCESS_IMG:
+            img = PREPROCESS_IMG(img)
+
 
         img_path, ann_path = get_file_path(path)
 
@@ -87,6 +117,30 @@ def get_images_labels_features(dataloader, model, preprocess):
 
     return images, labels, features, (img_paths, ann_paths)
 
+def get_images(paths):
+    images = []
+    for path in paths:
+        img_path, ann_path = get_file_path(path)
+        img = np.array(Image.open(img_path).convert('RGB'))
+        images.extend(resize_images([img]))
+
+    return images
+
+
+
+
+def get_images(file_names):
+
+    images = []
+
+    for file in file_names:
+        with Image.open(file) as img:
+            img = img.convert('RGB').resize((IMG_WIDTH, IMG_HEIGHT))
+            images.append(img)
+
+    return images
+
+
 
 def extract_features(img, model, preprocess):
 
@@ -97,86 +151,6 @@ def extract_features(img, model, preprocess):
     emb = model(batch).squeeze().detach().numpy()
  
     return emb
-
-def create_sprite_image(pil_images, save_path):
-    # Assuming all images have the same width and height
-    img_width, img_height = pil_images[0].size
- 
-    # create a master square images
-    row_coln_count = int(np.ceil(np.sqrt(len(pil_images))))
-    master_img_width = img_width * row_coln_count
-    master_img_height = img_height * row_coln_count
- 
-    master_image = Image.new(
-        mode = 'RGBA',
-        size = (master_img_width, master_img_height),
-        color = (0, 0, 0, 0)
-    )
- 
-    for i, img in tqdm(enumerate(pil_images)):
-        div, mod = divmod(i, row_coln_count)
-        w_loc = img_width * mod
-        h_loc = img_height * div
-        master_image.paste(img, (w_loc, h_loc))
- 
-    master_image.convert('RGB').save(save_path, transparency=0)
-    return
-
-def write_embedding(log_dir, pil_images, features, labels, paths=None):
-    """Writes embedding data and projector configuration to the logdir."""
-    metadata_filename = "metadata.tsv"
-    path_filename = "paths.tsv"
-    tensor_filename = "features.tsv"
-    npy_filename = "features.npy"
-    sprite_image_filename = "sprite.jpg"
-
-    os.makedirs(log_dir, exist_ok=True)
- 
-    print("writing labels...")
-    with open(os.path.join(log_dir, metadata_filename), "w") as f:
-        f.write("{}\n".format('\n'.join([str(l) for l in labels])))
-
-    if paths is not None and len(paths) == 2:
-        print("writing paths...")
-        with open(os.path.join(log_dir, path_filename), "w") as f:
-            img_files, ann_files = paths
-            for i, a in zip(img_files, ann_files):
-                f.write(f"{i}\t{a}\n")
-
-    print("writing embeddings...")
-    np.save(os.path.join(log_dir, npy_filename), np.array(features))
-    with open(os.path.join(log_dir, tensor_filename), "w") as f:
-        for tensor in tqdm(features):
-            f.write("{}\n".format("\t".join(str(x) for x in tensor)))
-
-    print("writing images...")
-    sprite_image_path = os.path.join(log_dir, sprite_image_filename)
-    if pil_images is None:
-        assert os.path.exists(sprite_image_path)
-        img_width, img_height = 64, 64
-    else:
-        if is_tensor(pil_images[0]):
-            pil_images = [to_pil_image(t.permute(2, 0, 1)) for t in pil_images]
-        create_sprite_image(pil_images, sprite_image_path)
-        # Specify the width and height of a single thumbnail.
-        img_width, img_height = pil_images[0].size
- 
- 
-    config = projector.ProjectorConfig()
-    embedding = config.embeddings.add()
-    # Label info.
-    embedding.metadata_path = metadata_filename
-    # Features info.
-    embedding.tensor_path = tensor_filename
-    # Image info.
-    embedding.sprite.image_path = sprite_image_filename
-    embedding.sprite.single_image_dim.extend([img_width, img_height])
-    # Create the configuration file.
-    projector.visualize_embeddings(log_dir, config)
-     
-    return
-
-
 
 if __name__ == "__main__":
 
