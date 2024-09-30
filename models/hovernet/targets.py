@@ -9,6 +9,9 @@ from scipy.ndimage import measurements
 from skimage import morphology as morph
 import matplotlib.pyplot as plt
 
+import sys
+sys.path.append('/workspace/hover_net')
+
 from misc.utils import center_pad_to_shape, cropping_center, get_bounding_box
 from dataloader.augs import fix_mirror_padding
 
@@ -151,3 +154,26 @@ def prep_sample(data, is_batch=False, **kwargs):
         return np.concatenate(viz_list, axis=0)
     else:
         return prep_one_sample(data)
+
+
+def vis_hv_map(hv_map, shape=(256, 256)):
+    cmap = plt.get_cmap("jet")
+
+    def colorize(ch, vmin, vmax, shape):
+        ch = np.squeeze(ch.astype("float32"))
+        ch = ch / (vmax - vmin + 1.0e-16)
+        # take RGB from RGBA heat map
+        ch_cmap = (cmap(ch)[..., :3] * 255).astype("uint8")
+        ch_cmap = center_pad_to_shape(ch_cmap, shape)
+        return ch_cmap
+
+    viz_list = []
+    # viz_list.append(colorize(data["np_map"], 0, 1, shape))
+    # map to [0,2] for better visualisation.
+    # Note, [-1,1] is used for training.
+    viz_list.append(colorize(hv_map[..., 0] + 1, 0, 2, shape))
+    viz_list.append(colorize(hv_map[..., 1] + 1, 0, 2, shape))
+    # img = center_pad_to_shape(data["img"], shape)
+    return np.concatenate(viz_list, axis=1)
+    
+
